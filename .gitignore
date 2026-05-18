@@ -1,0 +1,10 @@
+terraform/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.pem
+key.pem
+inventory.ini
+node_modules/
+.env
+.DS_Store

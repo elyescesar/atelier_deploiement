@@ -1,0 +1,79 @@
+---
+- name: Deploy ecommerce stack
+  hosts: web
+  become: true
+  vars:
+    project_root: "{{ playbook_dir }}/.."
+    deploy_path: /opt/ecommerce
+
+  pre_tasks:
+    - name: Wait for SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+
+  tasks:
+    - name: Install Docker
+      ansible.builtin.dnf:
+        name:
+          - docker
+        state: present
+
+    - name: Enable and start Docker
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Add ec2-user to docker group
+      ansible.builtin.user:
+        name: ec2-user
+        groups: docker
+        append: true
+
+    - name: Ensure compose plugin directory exists
+      ansible.builtin.file:
+        path: /usr/local/lib/docker/cli-plugins
+        state: directory
+        mode: "0755"
+
+    - name: Install Docker Compose plugin
+      ansible.builtin.get_url:
+        url: https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-x86_64
+        dest: /usr/local/lib/docker/cli-plugins/docker-compose
+        mode: "0755"
+
+    - name: Create deploy directory
+      ansible.builtin.file:
+        path: "{{ deploy_path }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copy application files
+      ansible.builtin.copy:
+        src: "{{ project_root }}/app/"
+        dest: "{{ deploy_path }}/app/"
+        mode: preserve
+
+    - name: Copy Docker files
+      ansible.builtin.copy:
+        src: "{{ project_root }}/docker/"
+        dest: "{{ deploy_path }}/docker/"
+        mode: preserve
+
+    - name: Start Docker Compose stack
+      ansible.builtin.command:
+        cmd: docker compose up -d --build
+        chdir: "{{ deploy_path }}/docker"
+      register: compose_result
+      changed_when: true
+
+    - name: Verify containers are running
+      ansible.builtin.command:
+        cmd: docker compose ps
+        chdir: "{{ deploy_path }}/docker"
+      register: compose_ps
+      changed_when: false
+
+    - name: Show container status
+      ansible.builtin.debug:
+        var: compose_ps.stdout_lines
