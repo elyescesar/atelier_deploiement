@@ -36,11 +36,19 @@
         state: directory
         mode: "0755"
 
-    - name: Install Docker Compose plugin
+    - name: Install Docker Compose plugin via dnf
+      ansible.builtin.dnf:
+        name: docker-compose-plugin
+        state: present
+      ignore_errors: true
+      register: compose_dnf
+
+    - name: Install Docker Compose plugin manually
       ansible.builtin.get_url:
         url: https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-x86_64
         dest: /usr/local/lib/docker/cli-plugins/docker-compose
         mode: "0755"
+      when: compose_dnf is failed
 
     - name: Create deploy directory
       ansible.builtin.file:
@@ -60,12 +68,34 @@
         dest: "{{ deploy_path }}/docker/"
         mode: preserve
 
+    - name: Pull container images
+      ansible.builtin.shell: |
+        set -e
+        cd "{{ deploy_path }}/docker"
+        for attempt in 1 2 3 4 5; do
+          echo "Pull attempt ${attempt}/5"
+          docker compose pull && exit 0
+          sleep 30
+        done
+        exit 1
+      register: pull_result
+      changed_when: true
+
     - name: Start Docker Compose stack
-      ansible.builtin.command:
-        cmd: docker compose up -d --build
-        chdir: "{{ deploy_path }}/docker"
+      ansible.builtin.shell: |
+        set -e
+        cd "{{ deploy_path }}/docker"
+        docker compose up -d --build --pull never
       register: compose_result
       changed_when: true
+
+    - name: Show compose failure details
+      ansible.builtin.shell: |
+        cd "{{ deploy_path }}/docker"
+        docker compose ps -a
+        docker compose logs --tail=80
+      when: compose_result.rc != 0
+      changed_when: false
 
     - name: Verify containers are running
       ansible.builtin.command:
