@@ -1,6 +1,8 @@
-FROM public.ecr.aws/docker/library/node:20-alpine
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023
 
 WORKDIR /app
+
+RUN dnf install -y nodejs npm && dnf clean all
 
 COPY package.json ./
 RUN npm install --production
