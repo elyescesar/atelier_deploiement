@@ -55,33 +55,34 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
-      - name: Import orphaned ALB resources
+      - name: Cleanup orphaned load balancers
         continue-on-error: true
-        timeout-minutes: 5
+        timeout-minutes: 10
         run: |
           set +e
-          import_if_missing() {
-            addr="$1"
-            id="$2"
-            if [ -z "$id" ] || [ "$id" = "None" ]; then
-              return 0
-            fi
-            if terraform state show "$addr" >/dev/null 2>&1; then
-              return 0
-            fi
-            terraform import -input=false "$addr" "$id"
-          }
-
-          ALB_ARN=$(aws elbv2 describe-load-balancers --names "ecommerce-devops-lab-alb" --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null || true)
-          import_if_missing aws_lb.main "$ALB_ARN"
-
-          TG_ARN=$(aws elbv2 describe-target-groups --names "ecommerce-devops-lab-tg" --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null || true)
-          import_if_missing aws_lb_target_group.web "$TG_ARN"
-
-          if [ -n "$ALB_ARN" ] && [ "$ALB_ARN" != "None" ]; then
-            LISTENER_ARN=$(aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" --query 'Listeners[?Port==`80`].ListenerArn | [0]' --output text 2>/dev/null || true)
-            import_if_missing aws_lb_listener.http "$LISTENER_ARN"
+          if terraform state show aws_lb.main >/dev/null 2>&1; then
+            echo "ALB tracked in state, skipping orphan cleanup"
+            exit 0
           fi
+
+          for ALB_NAME in ecommerce-devops-lab-alb; do
+            ALB_ARN=$(aws elbv2 describe-load-balancers --names "$ALB_NAME" --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null || true)
+            if [ -z "$ALB_ARN" ] || [ "$ALB_ARN" = "None" ]; then
+              continue
+            fi
+            for LISTENER_ARN in $(aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" --query 'Listeners[].ListenerArn' --output text 2>/dev/null); do
+              aws elbv2 delete-listener --listener-arn "$LISTENER_ARN"
+            done
+            aws elbv2 delete-load-balancer --load-balancer-arn "$ALB_ARN"
+            aws elbv2 wait load-balancers-deleted --load-balancer-arns "$ALB_ARN" 2>/dev/null || sleep 60
+          done
+
+          for TG_NAME in ecommerce-devops-lab-tg; do
+            TG_ARN=$(aws elbv2 describe-target-groups --names "$TG_NAME" --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null || true)
+            if [ -n "$TG_ARN" ] && [ "$TG_ARN" != "None" ]; then
+              aws elbv2 delete-target-group --target-group-arn "$TG_ARN"
+            fi
+          done
 
       - name: Terraform Plan
         run: terraform plan -out=tfplan -var="key_name=${{ secrets.EC2_KEY_NAME }}"
