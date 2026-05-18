@@ -69,9 +69,10 @@
       ansible.builtin.shell: |
         set -e
         cd "{{ deploy_path }}/docker"
-        docker compose up -d --build
+        docker compose build --no-cache --progress=plain 2>&1 | tee /tmp/compose-build.log
+        docker compose up -d
       register: compose_result
-      async: 1200
+      async: 1800
       poll: 30
 
     - name: Show compose failure details

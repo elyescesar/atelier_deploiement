@@ -1,9 +1,14 @@
 FROM public.ecr.aws/amazonlinux/amazonlinux:2023
 
-RUN dnf install -y wget && \
-    wget -qO /etc/yum.repos.d/mongodb-org-6.0.repo https://repo.mongodb.org/yum/amazon/2023/mongodb-org/6.0/mongodb-org-6.0.repo && \
-    dnf install -y mongodb-org && \
-    dnf clean all
+ARG MONGO_VERSION=6.0.16
+
+RUN dnf install -y tar gzip curl && dnf clean all && \
+    (curl -fSL "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-amazon2023-${MONGO_VERSION}.tgz" -o /tmp/mongo.tgz || \
+     curl -fSL "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-amazon2-${MONGO_VERSION}.tgz" -o /tmp/mongo.tgz) && \
+    tar -xzf /tmp/mongo.tgz -C /opt && \
+    mv /opt/mongodb-linux-x86_64-* /opt/mongodb && \
+    ln -sf /opt/mongodb/bin/* /usr/local/bin/ && \
+    rm -f /tmp/mongo.tgz
 
 RUN mkdir -p /data/db
 
