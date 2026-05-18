@@ -22,6 +22,9 @@ jobs:
     defaults:
       run:
         working-directory: terraform
+    env:
+      TF_VAR_key_name: ${{ secrets.EC2_KEY_NAME }}
+      TF_IN_AUTOMATION: true
     outputs:
       instance_ips: ${{ steps.export.outputs.instance_ips }}
     steps:
@@ -54,13 +57,19 @@ jobs:
 
       - name: Import orphaned ALB resources
         continue-on-error: true
+        timeout-minutes: 5
         run: |
+          set +e
           import_if_missing() {
             addr="$1"
             id="$2"
-            [ -z "$id" ] || [ "$id" = "None" ] && return 0
-            terraform state show "$addr" >/dev/null 2>&1 && return 0
-            terraform import "$addr" "$id"
+            if [ -z "$id" ] || [ "$id" = "None" ]; then
+              return 0
+            fi
+            if terraform state show "$addr" >/dev/null 2>&1; then
+              return 0
+            fi
+            terraform import -input=false "$addr" "$id"
           }
 
           ALB_ARN=$(aws elbv2 describe-load-balancers --names "ecommerce-devops-lab-alb" --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null || true)
@@ -146,6 +155,9 @@ jobs:
     defaults:
       run:
         working-directory: terraform
+    env:
+      TF_VAR_key_name: ${{ secrets.EC2_KEY_NAME }}
+      TF_IN_AUTOMATION: true
     steps:
       - uses: actions/checkout@v4
 
@@ -169,7 +181,7 @@ jobs:
         run: terraform init
 
       - name: Terraform Destroy
-        run: terraform destroy -auto-approve -var="key_name=${{ secrets.EC2_KEY_NAME }}"
+        run: terraform destroy -auto-approve -input=false
 
       - name: Upload Terraform State
         uses: actions/upload-artifact@v4
