@@ -173,6 +173,12 @@ jobs:
             done
           done
 
+      - name: Pull container images on runner
+        run: |
+          docker pull public.ecr.aws/docker/library/mongo:6.0
+          docker pull public.ecr.aws/docker/library/nginx:alpine
+          docker save public.ecr.aws/docker/library/mongo:6.0 public.ecr.aws/docker/library/nginx:alpine -o lab-images.tar
+
       - name: Run Ansible Deployment
         run: ansible-playbook -i inventory.ini ansible/deploy.yml
         env:
