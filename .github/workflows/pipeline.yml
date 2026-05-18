@@ -52,10 +52,33 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
+      - name: Import orphaned ALB resources
+        continue-on-error: true
+        run: |
+          import_if_missing() {
+            addr="$1"
+            id="$2"
+            [ -z "$id" ] || [ "$id" = "None" ] && return 0
+            terraform state show "$addr" >/dev/null 2>&1 && return 0
+            terraform import "$addr" "$id"
+          }
+
+          ALB_ARN=$(aws elbv2 describe-load-balancers --names "ecommerce-devops-lab-alb" --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null || true)
+          import_if_missing aws_lb.main "$ALB_ARN"
+
+          TG_ARN=$(aws elbv2 describe-target-groups --names "ecommerce-devops-lab-tg" --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null || true)
+          import_if_missing aws_lb_target_group.web "$TG_ARN"
+
+          if [ -n "$ALB_ARN" ] && [ "$ALB_ARN" != "None" ]; then
+            LISTENER_ARN=$(aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" --query 'Listeners[?Port==`80`].ListenerArn | [0]' --output text 2>/dev/null || true)
+            import_if_missing aws_lb_listener.http "$LISTENER_ARN"
+          fi
+
       - name: Terraform Plan
         run: terraform plan -out=tfplan -var="key_name=${{ secrets.EC2_KEY_NAME }}"
 
       - name: Terraform Apply
+        id: terraform-apply
         run: terraform apply -auto-approve tfplan
 
       - name: Export Instance IPs
@@ -65,12 +88,13 @@ jobs:
           echo "instance_ips=$IPS" >> $GITHUB_OUTPUT
 
       - name: Upload Terraform State
+        if: always() && (steps.terraform-apply.outcome == 'success' || steps.terraform-apply.outcome == 'failure')
         uses: actions/upload-artifact@v4
         with:
           name: terraform-state
           path: terraform/terraform.tfstate
           retention-days: 30
-          if-no-files-found: error
+          if-no-files-found: ignore
 
   ansible:
     name: Configure Servers
