@@ -13,8 +13,27 @@ on:
         options:
           - deploy
           - destroy
+          - cleanup
 
 jobs:
+  cleanup:
+    name: Cleanup Orphaned Lab Resources
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'cleanup'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Run lab cleanup script
+        run: bash scripts/cleanup-lab.sh
+
   terraform:
     name: Provision Infrastructure
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy')
@@ -54,6 +73,16 @@ jobs:
 
       - name: Terraform Validate
         run: terraform validate
+
+      - name: Cleanup orphaned lab resources
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          if terraform state show aws_vpc.main >/dev/null 2>&1; then
+            echo "VPC already in Terraform state, skipping orphan cleanup"
+            exit 0
+          fi
+          bash ../scripts/cleanup-lab.sh
 
       - name: Cleanup orphaned load balancers
         continue-on-error: true
