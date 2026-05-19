@@ -1,8 +1,6 @@
-FROM public.ecr.aws/amazonlinux/amazonlinux:2023
+FROM node:20-alpine
 
 WORKDIR /app
-
-RUN dnf install -y nodejs npm && dnf clean all
 
 COPY package.json ./
 RUN npm install --production

@@ -1,6 +1,6 @@
 services:
   mongo:
-    image: public.ecr.aws/docker/library/mongo:6.0
+    image: mongo:6
     container_name: ecommerce-mongo
     restart: unless-stopped
     volumes:
@@ -23,11 +23,13 @@ services:
       - ecommerce
 
   nginx:
-    image: ecommerce-nginx:latest
+    image: nginx:alpine
     container_name: ecommerce-nginx
     restart: unless-stopped
     ports:
       - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - app
     networks:

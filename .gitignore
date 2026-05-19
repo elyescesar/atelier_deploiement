@@ -5,7 +5,6 @@ terraform/.terraform/
 *.pem
 key.pem
 inventory.ini
-lab-images.tar
 node_modules/
 .env
 .DS_Store
