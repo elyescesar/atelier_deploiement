@@ -1,4 +1,4 @@
-name: Full DevOps Pipeline
+name: Full Pipeline
 
 on:
   push:
