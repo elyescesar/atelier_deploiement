@@ -71,8 +71,9 @@ jobs:
         with:
           name: terraform-state
           path: terraform/terraform.tfstate
-          retention-days: 30
+          retention-days: 90
           if-no-files-found: ignore
+          overwrite: true
 
   ansible:
     name: Configure Servers
@@ -110,17 +111,8 @@ jobs:
     name: Destroy Infrastructure (Manual)
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: terraform
     steps:
       - uses: actions/checkout@v4
-
-      - name: Download Terraform State
-        uses: actions/download-artifact@v4
-        with:
-          name: terraform-state
-          path: terraform
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -130,10 +122,36 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: us-east-1
 
+      - name: Download Terraform State from last deploy
+        uses: dawidd6/action-download-artifact@v6
+        id: download-state
+        continue-on-error: true
+        with:
+          name: terraform-state
+          path: terraform
+          workflow: pipeline.yml
+          branch: main
+          search_artifacts: true
+          if_no_artifact_found: warn
+
+      - name: Check Terraform state file
+        id: state
+        run: |
+          if [ -f terraform/terraform.tfstate ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Init
-        run: terraform init
-
       - name: Terraform Destroy
-        run: terraform destroy -auto-approve -var="key_name=${{ secrets.EC2_KEY_NAME }}"
+        if: steps.state.outputs.found == 'true'
+        working-directory: terraform
+        run: |
+          terraform init
+          terraform destroy -auto-approve -var="key_name=${{ secrets.EC2_KEY_NAME }}"
+
+      - name: Cleanup lab resources without state
+        if: steps.state.outputs.found != 'true'
+        run: bash scripts/cleanup-lab.sh
