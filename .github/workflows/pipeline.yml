@@ -17,6 +17,7 @@ on:
         options:
           - deploy
           - destroy
+          - cleanup
 
 jobs:
   terraform:
@@ -111,6 +112,24 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
 
+  cleanup:
+    name: Cleanup All Lab Resources
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'cleanup'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Cleanup all lab resources
+        run: bash scripts/cleanup-lab.sh
+
   destroy:
     name: Destroy Infrastructure (Manual)
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
@@ -128,7 +147,6 @@ jobs:
 
       - name: Download Terraform State from last deploy
         uses: dawidd6/action-download-artifact@v6
-        id: download-state
         continue-on-error: true
         with:
           name: terraform-state
@@ -138,24 +156,18 @@ jobs:
           search_artifacts: true
           if_no_artifact_found: warn
 
-      - name: Check Terraform state file
-        id: state
-        run: |
-          if [ -f terraform/terraform.tfstate ]; then
-            echo "found=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "found=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Destroy
-        if: steps.state.outputs.found == 'true'
+        continue-on-error: true
         working-directory: terraform
         run: |
-          terraform init
-          terraform destroy -auto-approve -var="key_name=${{ secrets.EC2_KEY_NAME }}"
+          if [ -f terraform.tfstate ]; then
+            terraform init
+            terraform destroy -auto-approve -var="key_name=${{ secrets.EC2_KEY_NAME }}"
+          else
+            echo "No local state file, skipping terraform destroy"
+          fi
 
-      - name: Cleanup lab resources without state
-        if: steps.state.outputs.found != 'true'
+      - name: Cleanup all lab resources
         run: bash scripts/cleanup-lab.sh
