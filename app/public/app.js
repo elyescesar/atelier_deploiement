@@ -11,8 +11,13 @@ const categoryInput = document.getElementById("category");
 const descriptionInput = document.getElementById("description");
 const cardTemplate = document.getElementById("card-template");
 
+function productId(product) {
+  return String(product._id);
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
+    cache: "no-store",
     headers: { "Content-Type": "application/json" },
     ...options
   });
@@ -35,7 +40,7 @@ function showForm(editProduct = null) {
   formPanel.classList.remove("hidden");
   if (editProduct) {
     formTitle.textContent = "Edit product";
-    productIdInput.value = editProduct._id;
+    productIdInput.value = productId(editProduct);
     nameInput.value = editProduct.name;
     priceInput.value = editProduct.price;
     categoryInput.value = editProduct.category || "";
@@ -61,7 +66,6 @@ function renderProducts(products) {
 
   products.forEach((product) => {
     const node = cardTemplate.content.cloneNode(true);
-    const card = node.querySelector(".card");
     node.querySelector(".tag").textContent = product.category || "General";
     node.querySelector(".card-title").textContent = product.name;
     node.querySelector(".card-desc").textContent = product.description || "No description.";
@@ -72,7 +76,7 @@ function renderProducts(products) {
       if (!confirm(`Delete ${product.name}?`)) {
         return;
       }
-      await api(`/api/products/${product._id}`, { method: "DELETE" });
+      await api(`/api/products/${productId(product)}`, { method: "DELETE" });
       await loadProducts();
     });
 
@@ -81,7 +85,7 @@ function renderProducts(products) {
 }
 
 async function loadProducts() {
-  const products = await api("/api/products");
+  const products = await api(`/api/products?_=${Date.now()}`);
   renderProducts(products);
 }
 

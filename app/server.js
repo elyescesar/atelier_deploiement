@@ -7,6 +7,12 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.json());
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api/")) {
+    res.set("Cache-Control", "no-store");
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, "public")));
 
 function validateProduct(body) {
@@ -84,15 +90,15 @@ app.put("/api/products/:id", async (req, res) => {
     if (!data) {
       return res.status(400).json({ error: "Invalid name or price" });
     }
-    const result = await getProductsCollection().findOneAndUpdate(
+    const update = await getProductsCollection().updateOne(
       { _id: id },
-      { $set: { ...data, updatedAt: new Date() } },
-      { returnDocument: "after" }
+      { $set: { ...data, updatedAt: new Date() } }
     );
-    if (!result) {
+    if (update.matchedCount === 0) {
       return res.status(404).json({ error: "Product not found" });
     }
-    res.json(result);
+    const product = await getProductsCollection().findOne({ _id: id });
+    res.json(product);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

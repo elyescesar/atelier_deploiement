@@ -16,6 +16,11 @@ resource "aws_lb_target_group" "web" {
   protocol = "HTTP"
   vpc_id   = aws_vpc.main.id
 
+  stickiness {
+    type            = "lb_cookie"
+    cookie_duration = 86400
+  }
+
   health_check {
     enabled             = true
     healthy_threshold   = 2
