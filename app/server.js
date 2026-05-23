@@ -1,78 +1,126 @@
 const express = require("express");
-const { MongoClient } = require("mongodb");
+const path = require("path");
+const { connectMongo, getProductsCollection, parseObjectId } = require("./db");
+const { seedProducts } = require("./seed");
 
 const app = express();
 const port = process.env.PORT || 3000;
-const mongoUri = process.env.MONGO_URI || "mongodb://mongo:27017/shop";
 
-let db;
-let productsCollection;
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 
-const defaultProducts = [
-  { name: "Laptop", price: 1200 },
-  { name: "Phone", price: 800 }
-];
-
-async function connectMongo() {
-  const client = new MongoClient(mongoUri);
-  let attempt = 0;
-  while (attempt < 30) {
-    try {
-      await client.connect();
-      db = client.db();
-      productsCollection = db.collection("products");
-      const count = await productsCollection.countDocuments();
-      if (count === 0) {
-        await productsCollection.insertMany(defaultProducts);
-      }
-      return;
-    } catch (err) {
-      attempt += 1;
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    }
+function validateProduct(body) {
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const price = Number(body.price);
+  const category = typeof body.category === "string" ? body.category.trim() : "General";
+  const description = typeof body.description === "string" ? body.description.trim() : "";
+  if (!name || Number.isNaN(price) || price < 0) {
+    return null;
   }
-  throw new Error("MongoDB connection failed");
-}
-
-function renderPage(products) {
-  const items = products
-    .map((p) => `<li>${p.name} $${p.price}</li>`)
-    .join("");
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>E-Commerce Store</title>
-  <style>
-    body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
-    h1 { color: #1a1a2e; }
-    ul { line-height: 1.8; font-size: 1.1rem; }
-  </style>
-</head>
-<body>
-  <h1>E-Commerce Store</h1>
-  <ul>${items}</ul>
-</body>
-</html>`;
+  return { name, price, category, description };
 }
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-app.get("/api/products", async (req, res) => {
-  const products = await productsCollection.find({}).toArray();
-  res.json(products);
+app.post("/api/seed", async (req, res) => {
+  try {
+    const result = await seedProducts(getProductsCollection());
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.get("/", async (req, res) => {
-  const products = await productsCollection.find({}).toArray();
-  res.type("html").send(renderPage(products));
+app.get("/api/products", async (req, res) => {
+  try {
+    const products = await getProductsCollection().find({}).sort({ createdAt: -1 }).toArray();
+    res.json(products);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/products/:id", async (req, res) => {
+  try {
+    const id = parseObjectId(req.params.id);
+    if (!id) {
+      return res.status(400).json({ error: "Invalid product id" });
+    }
+    const product = await getProductsCollection().findOne({ _id: id });
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+    res.json(product);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/products", async (req, res) => {
+  try {
+    const data = validateProduct(req.body);
+    if (!data) {
+      return res.status(400).json({ error: "Invalid name or price" });
+    }
+    const now = new Date();
+    const doc = { ...data, createdAt: now, updatedAt: now };
+    const result = await getProductsCollection().insertOne(doc);
+    const product = await getProductsCollection().findOne({ _id: result.insertedId });
+    res.status(201).json(product);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/api/products/:id", async (req, res) => {
+  try {
+    const id = parseObjectId(req.params.id);
+    if (!id) {
+      return res.status(400).json({ error: "Invalid product id" });
+    }
+    const data = validateProduct(req.body);
+    if (!data) {
+      return res.status(400).json({ error: "Invalid name or price" });
+    }
+    const result = await getProductsCollection().findOneAndUpdate(
+      { _id: id },
+      { $set: { ...data, updatedAt: new Date() } },
+      { returnDocument: "after" }
+    );
+    if (!result) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/products/:id", async (req, res) => {
+  try {
+    const id = parseObjectId(req.params.id);
+    if (!id) {
+      return res.status(400).json({ error: "Invalid product id" });
+    }
+    const result = await getProductsCollection().deleteOne({ _id: id });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+    res.json({ deleted: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 connectMongo()
-  .then(() => {
+  .then(async () => {
+    await seedProducts(getProductsCollection());
     app.listen(port, "0.0.0.0", () => {
       console.log(`Server listening on ${port}`);
     });

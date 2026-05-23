@@ -5,11 +5,11 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --production
 
-COPY server.js ecosystem.config.cjs ./
+COPY server.js db.js seed.js ecosystem.config.cjs ./
+COPY public ./public
 
 ENV NODE_ENV=production
 ENV PORT=3000
-ENV MONGO_URI=mongodb://mongo:27017/shop
 
 EXPOSE 3000
 

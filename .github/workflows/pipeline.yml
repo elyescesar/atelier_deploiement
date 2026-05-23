@@ -107,6 +107,13 @@ jobs:
           done
           cat inventory.ini
 
+      - name: Create docker environment file
+        run: |
+          cat > docker/.env <<EOF
+          MONGO_USERNAME=admin
+          MONGO_PASSWORD=${{ secrets.MONGO_PASSWORD }}
+          EOF
+
       - name: Run Ansible Deployment
         run: ansible-playbook -i inventory.ini ansible/deploy.yml
         env:
